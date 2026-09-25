@@ -62,6 +62,16 @@ extension KernelCoreContainer {
         return provider
     }
 
+    /// 解析必需的 Provider 实现；缺失时抛出 `providerNotFound`。
+    ///
+    /// 供需要在缺失时立即失败并回滚的插件生命周期使用（硬依赖语义）。
+    public func requireProvider<T>(_ type: T.Type = T.self) throws -> T {
+        guard let provider = resolveProvider(type) else {
+            throw KernelCoreError.providerNotFound(type: type)
+        }
+        return provider
+    }
+
     /// 指定 Provider 类型是否已注册（装配前的依赖校验用）。
     public func isProviderRegistered<T>(_ type: T.Type) -> Bool {
         providers[ObjectIdentifier(type)] != nil
