@@ -52,7 +52,10 @@ public final class KernelCoreContainer {
     var plugins: [String: any SuperPlugin] = [:]
 
     var pluginStartOrder: [String] = []
-    var activePluginID: String?
+
+    /// 当前正在执行生命周期的插件 ID。由生命周期引擎在每次调用插件回调前后
+    /// 设置/清空；`registerProvider` 据此记录 Provider 归属。宿主可读写。
+    public var activePluginID: String?
     var activePluginLifecyclePhase: KernelPluginLifecyclePhase?
     var pluginEnabledStates: [String: Bool] = [:]
 
