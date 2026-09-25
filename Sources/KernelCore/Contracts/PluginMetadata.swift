@@ -41,6 +41,8 @@ public enum PluginCategory: String, Codable, Sendable {
     case llm
     case editor
     case project
+    /// User-facing functionality that does not belong to a narrower domain.
+    case feature
     case system
     case design
     case integration
