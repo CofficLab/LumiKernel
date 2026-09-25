@@ -95,4 +95,10 @@ extension KernelCoreContainer {
     public func isProvider<T>(_ type: T.Type, ownedByPlugin id: String) -> Bool {
         providerOwners[ObjectIdentifier(type)] == id
     }
+
+    /// 当前 Provider 的归属插件 ID（由宿主注册时为 `nil`）。
+    /// 用于错误信息与诊断，例如重复注册时报告首次注册者。
+    public func providerOwner<T>(_ type: T.Type) -> String? {
+        providerOwners[ObjectIdentifier(type)]
+    }
 }
