@@ -106,7 +106,12 @@ extension KernelCoreContainer {
 
                 activePluginID = plugin.id
                 activePluginLifecyclePhase = .boot
-                try plugin.onBoot(kernel: self)
+                do {
+                    try plugin.onBoot(kernel: self)
+                } catch {
+                    // 在 rollback 清空 activePluginID 之前固化归属信息。
+                    throw Self.lifecycleError(pluginID: plugin.id, phase: .boot, error: error)
+                }
                 activePluginLifecyclePhase = nil
                 activePluginID = nil
                 pluginStartOrder.append(plugin.id)
@@ -115,7 +120,13 @@ extension KernelCoreContainer {
             for plugin in sorted {
                 guard isPluginEnabled(id: plugin.id) else { continue }
                 activePluginID = plugin.id
-                try plugin.onReady(kernel: self)
+                activePluginLifecyclePhase = .ready
+                do {
+                    try plugin.onReady(kernel: self)
+                } catch {
+                    throw Self.lifecycleError(pluginID: plugin.id, phase: .ready, error: error)
+                }
+                activePluginLifecyclePhase = nil
                 activePluginID = nil
             }
             setLifecycleState(.running)
@@ -126,6 +137,27 @@ extension KernelCoreContainer {
             setLifecycleState(previousState == .running ? .running : .failed)
             throw error
         }
+    }
+
+    /// 把生命周期回调的原始错误包装为携带归属信息的 `pluginLifecycleFailed`。
+    ///
+    /// 两种情况原样返回，不做包装：
+    /// - 已经是 `pluginLifecycleFailed`（嵌套生命周期，或被重新抛出），避免出现
+    ///   `Plugin 'a' failed ... Plugin 'a' failed ...` 的重复包装。
+    /// - `CancellationError`：任务取消是**外部**信号而非插件故障，包装后会
+    ///   让调用方无法把「用户/父任务取消」与「插件自身出错」区分开。
+    static func lifecycleError(
+        pluginID: String,
+        phase: KernelPluginLifecyclePhase,
+        error: Error
+    ) -> Error {
+        if case KernelCoreError.pluginLifecycleFailed = error { return error }
+        if error is CancellationError { return error }
+        return KernelCoreError.pluginLifecycleFailed(
+            pluginID: pluginID,
+            phase: phase.rawValue,
+            underlying: error
+        )
     }
 
     /// 逆启动顺序停止全部插件。某个 Shutdown 失败不会阻断其他插件清理，

@@ -116,14 +116,19 @@ public extension KernelCoreContainer {
 
                 activePluginID = plugin.id
                 activePluginLifecyclePhase = .boot
-                if let plugin = plugin as? any AsyncSuperPlugin {
-                    try await withLifecycleTimeout(timeout?.boot, phase: "boot", pluginID: plugin.id) {
-                        try await plugin.onBootAsync(kernel: self)
+                do {
+                    if let plugin = plugin as? any AsyncSuperPlugin {
+                        try await withLifecycleTimeout(timeout?.boot, phase: "boot", pluginID: plugin.id) {
+                            try await plugin.onBootAsync(kernel: self)
+                        }
+                    } else {
+                        try await withLifecycleTimeout(timeout?.boot, phase: "boot", pluginID: plugin.id) {
+                            try plugin.onBoot(kernel: self)
+                        }
                     }
-                } else {
-                    try await withLifecycleTimeout(timeout?.boot, phase: "boot", pluginID: plugin.id) {
-                        try plugin.onBoot(kernel: self)
-                    }
+                } catch {
+                    // 与同步入口一致：在 rollback 清空 activePluginID 之前固化归属。
+                    throw Self.lifecycleError(pluginID: plugin.id, phase: .boot, error: error)
                 }
                 activePluginLifecyclePhase = nil
                 activePluginID = nil
@@ -133,15 +138,21 @@ public extension KernelCoreContainer {
             for plugin in sorted {
                 guard isPluginEnabled(id: plugin.id) else { continue }
                 activePluginID = plugin.id
-                if let plugin = plugin as? any AsyncSuperPlugin {
-                    try await withLifecycleTimeout(timeout?.ready, phase: "ready", pluginID: plugin.id) {
-                        try await plugin.onReadyAsync(kernel: self)
+                activePluginLifecyclePhase = .ready
+                do {
+                    if let plugin = plugin as? any AsyncSuperPlugin {
+                        try await withLifecycleTimeout(timeout?.ready, phase: "ready", pluginID: plugin.id) {
+                            try await plugin.onReadyAsync(kernel: self)
+                        }
+                    } else {
+                        try await withLifecycleTimeout(timeout?.ready, phase: "ready", pluginID: plugin.id) {
+                            try plugin.onReady(kernel: self)
+                        }
                     }
-                } else {
-                    try await withLifecycleTimeout(timeout?.ready, phase: "ready", pluginID: plugin.id) {
-                        try plugin.onReady(kernel: self)
-                    }
+                } catch {
+                    throw Self.lifecycleError(pluginID: plugin.id, phase: .ready, error: error)
                 }
+                activePluginLifecyclePhase = nil
                 activePluginID = nil
             }
             setLifecycleState(.running)

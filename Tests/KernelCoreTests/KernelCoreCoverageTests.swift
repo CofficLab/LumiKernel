@@ -80,17 +80,24 @@ struct KernelCoreCoverageTests {
         #expect(core.isPluginRegistered(id: "early"))
     }
 
-    @Test("start 中 onBoot 抛错时向上传播")
+    @Test("start 中 onBoot 抛错时向上传播并标明归属")
     func startPropagatesOnBootError() throws {
         struct BootError: Error {}
         let core = KernelCoreContainer()
 
-        #expect(throws: BootError.self) {
+        var thrown: Error?
+        do {
             try core.start(plugins: [
                 OrderedPlugin(id: "ok", order: 100),
                 OrderedPlugin(id: "bad", order: 200) { _ in throw BootError() },
             ])
+        } catch {
+            thrown = error
         }
+        // 原始错误被包装为 pluginLifecycleFailed，但 BootError 仍作为 underlying 保留。
+        #expect(thrown?.lifecycleAttribution?.pluginID == "bad")
+        #expect(thrown?.lifecycleAttribution?.phase == "boot")
+        #expect(thrown?.lifecycleAttribution?.underlying is BootError)
         // 原子启动失败，不留下半启动插件。
         #expect(!core.isPluginRegistered(id: "ok"))
         #expect(!core.isPluginRegistered(id: "bad"))

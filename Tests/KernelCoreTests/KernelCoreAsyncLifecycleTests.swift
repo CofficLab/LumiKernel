@@ -82,9 +82,18 @@ struct KernelCoreAsyncLifecycleTests {
         plugin.failReady = true
         let kernel = KernelCoreContainer()
 
-        await #expect(throws: TestError.self) {
+        // 只调用一次：失败后内核已进入 .failed，再次 start 会抛出生命周期状态错误，
+        // 断言到的就不是本次要验证的归属信息了。
+        var thrown: Error?
+        do {
             try await kernel.startAsync(plugins: [plugin])
+        } catch {
+            thrown = error
         }
+        #expect(thrown is KernelCoreError)
+        #expect(thrown?.lifecycleAttribution?.pluginID == "async")
+        #expect(thrown?.lifecycleAttribution?.phase == "ready")
+        #expect(thrown?.lifecycleAttribution?.underlying is TestError)
         #expect(log.values == ["boot:async", "ready:async", "shutdown:async"])
         #expect(!kernel.isPluginRegistered(id: "async"))
         #expect(kernel.lifecycleState == .failed)

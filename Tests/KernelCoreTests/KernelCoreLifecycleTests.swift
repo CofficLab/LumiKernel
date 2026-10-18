@@ -107,14 +107,51 @@ struct KernelCoreLifecycleTests {
         feature.readyError = TestError()
         let kernel = KernelCoreContainer()
 
-        #expect(throws: TestError.self) {
-            try kernel.start(plugins: [base, feature])
-        }
+        // 错误被包装为 pluginLifecycleFailed：原始 TestError 仍作为 underlying
+        // 保留，同时补上此前完全缺失的归属信息（插件 id + 失败阶段）。
+        // 只调用一次：失败后内核已进入 .failed，再次 start 抛的是生命周期状态错误。
+        let thrown = Self.capturedError { try kernel.start(plugins: [base, feature]) }
+        #expect(thrown is KernelCoreError)
+        #expect(thrown?.lifecycleAttribution?.pluginID == "feature")
+        #expect(thrown?.lifecycleAttribution?.phase == "ready")
+        #expect(thrown?.lifecycleAttribution?.underlying is TestError)
 
         #expect(log.values.suffix(2) == ["shutdown:feature", "shutdown:base"])
         #expect(kernel.resolveProvider(OwnedProviding.self) == nil)
         #expect(kernel.registeredPluginCount == 0)
         #expect(kernel.lifecycleState == .failed)
+    }
+
+    /// 从一次预期失败的调用中取出错误。
+    ///
+    /// Swift Testing 的 `#expect(throws:)` 不支持尾随 `do` 块取回错误值，
+    /// 因此统一用这个辅助函数捕获，保证断言的是内核真正抛出的那一个错误。
+    private static func capturedError(_ operation: () throws -> Void) -> Error? {
+        do {
+            _ = try operation()
+            Issue.record("expected the call to throw, but it returned")
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @Test("Boot 失败会标出失败的插件与 boot 阶段")
+    func bootFailureCarriesAttribution() {
+        let log = EventLog()
+        let plugin = LifecyclePlugin(id: "boom", events: log)
+        plugin.bootError = TestError()
+        let kernel = KernelCoreContainer()
+
+        let thrown = Self.capturedError { try kernel.start(plugins: [plugin]) }
+        #expect(thrown?.lifecycleAttribution?.pluginID == "boom")
+        #expect(thrown?.lifecycleAttribution?.phase == "boot")
+        #expect(thrown?.lifecycleAttribution?.underlying is TestError)
+
+        // 归属信息必须排在最前面：宿主启动失败页会把 errorDescription 整段展示，
+        // 用户复制去排查时要第一眼看到是哪个插件。
+        let described = (thrown as? KernelCoreError)?.errorDescription ?? ""
+        #expect(described.hasPrefix("Plugin 'boom' failed during boot"))
     }
 
     @Test("stop 逆序清理并可再次启动")

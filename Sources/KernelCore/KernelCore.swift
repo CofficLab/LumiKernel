@@ -1,8 +1,13 @@
 import Foundation
 import os
 
-enum KernelPluginLifecyclePhase {
+/// 当前正在执行的生命周期阶段。
+///
+/// 生命周期引擎在每次调用插件回调前后设置/清空。阶段值除了用于
+/// `resolveProvider` 的 boot 期诊断，还用于失败时定位「哪个插件、在哪个阶段」出错。
+enum KernelPluginLifecyclePhase: String, Sendable {
     case boot
+    case ready
 }
 
 public enum KernelLifecycleState: String, Sendable {
